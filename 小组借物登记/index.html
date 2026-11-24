@@ -14,12 +14,78 @@
 
     <h2>物品列表</h2>
     <ul id="itemList">
-        <li>充电线 · 可借</li>
     </ul>
-
+     <h2>最近记录</h2>
+    <ul id="recordList"></ul>
     <script>
-        function addItem() {
+        let items = [{ name: "充电线" }];
+    const savedItems = localStorage.getItem("borrowItems");
+
+     if (savedItems !== null) {
+    items = JSON.parse(savedItems);
+}
+function showRecord(action) {
+    const time = new Date().toLocaleTimeString();
+    const record = document.createElement("li");
+    record.textContent = time + " · " + action;
+    document.getElementById("recordList").prepend(record);
+}
+
+function showItem(item) {
+    const row = document.createElement("li");
+    const label = document.createElement("span");
+    const button = document.createElement("button");
+
+    function updateRow() {
+        if (item.borrower) {
+            label.textContent = item.name + " · 已借出 · " + item.borrower + " ";
+            button.textContent = "归还";
+        } else {
+            label.textContent = item.name + " · 可借 ";
+            button.textContent = "借出";
         }
+    }
+
+  button.onclick = function () {
+    let action;
+
+    if (item.borrower) {
+        action = item.borrower + " 归还了 " + item.name;
+        item.borrower = "";
+    } else {
+        const borrower = prompt("请输入借用人的名字");
+        if (borrower === null || borrower.trim() === "") return;
+        item.borrower = borrower.trim();
+        action = item.borrower + " 借走了 " + item.name;
+    }
+
+    localStorage.setItem("borrowItems", JSON.stringify(items));
+    updateRow();
+    showRecord(action);
+};
+
+    updateRow();
+    row.appendChild(label);
+    row.appendChild(button);
+    document.getElementById("itemList").appendChild(row);
+}
+
+function addItem() {
+    const input = document.getElementById("itemName");
+    const name = input.value.trim();
+    if (name === "") return;
+
+    const item = { name: name };
+    items.push(item);
+    localStorage.setItem("borrowItems", JSON.stringify(items));
+
+    showItem(item);
+    input.value = "";
+}
+
+for (const item of items) {
+    showItem(item);
+}
     </script>
 </body>
 </html>
