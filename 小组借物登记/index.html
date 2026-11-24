@@ -4,87 +4,251 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>小组借物登记</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>小组借物登记</h1>
+    <main class="workspace">
+        <header class="hero">
+            <h1>小组借物登记</h1>
+            <p>借还记录保存在当前浏览器</p>
+        </header>
 
-    <label for="itemName">物品名称</label>
-    <input id="itemName" type="text">
-    <button type="button" onclick="addItem()">新增物品</button>
+        <dl class="overview" aria-label="物品统计">
+            <div class="stat"><dt>全部物品</dt><dd id="totalCount">0</dd></div>
+            <div class="stat"><dt>可借</dt><dd id="availableCount">0</dd></div>
+            <div class="stat"><dt>已借出</dt><dd id="borrowedCount">0</dd></div>
+            <div class="stat stat-overdue"><dt>已逾期</dt><dd id="overdueCount">0</dd></div>
+        </dl>
 
-    <h2>物品列表</h2>
-    <ul id="itemList">
-    </ul>
-     <h2>最近记录</h2>
-    <ul id="recordList"></ul>
+        <div class="panels">
+            <section class="panel" aria-labelledby="itemsHeading">
+                <h2 id="itemsHeading">物品清单</h2>
+                <form class="add-form" onsubmit="addItem(event)">
+                    <label for="itemName">物品名称</label>
+                    <div class="input-row">
+                        <input id="itemName" type="text" placeholder="例如：充电线" required>
+                        <button type="submit">新增物品</button>
+                    </div>
+                </form>
+                <p class="empty-state" id="emptyItems" hidden>清单是空的，可以在上方新增物品。</p>
+                <ul class="item-list" id="itemList" aria-label="物品"></ul>
+            </section>
+
+            <section class="panel" aria-labelledby="recordsHeading">
+                <h2 id="recordsHeading">最近记录</h2>
+                <p class="empty-state" id="emptyRecords">借出、归还或删除物品后，记录会显示在这里。</p>
+                <ul class="record-list" id="recordList" aria-label="操作记录"></ul>
+            </section>
+        </div>
+    </main>
+
+    <dialog id="borrowDialog" aria-labelledby="borrowHeading">
+        <form id="borrowForm" onsubmit="borrowItem(event)">
+            <h2 id="borrowHeading">登记借出</h2>
+            <p class="dialog-item" id="borrowItemName"></p>
+            <label for="borrowerName">借用人</label>
+            <input id="borrowerName" type="text" placeholder="输入借用人姓名" required autofocus>
+            <label for="dueDate">应还日期 <span>选填</span></label>
+            <input id="dueDate" type="date">
+            <div class="dialog-actions">
+                <button class="secondary" id="cancelBorrow" type="button">取消</button>
+                <button type="submit">确认借出</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="deleteDialog" aria-labelledby="deleteHeading" aria-describedby="deleteMessage">
+        <form method="dialog">
+            <h2 id="deleteHeading">删除物品</h2>
+            <p class="dialog-item" id="deleteMessage"></p>
+            <div class="dialog-actions">
+                <button class="secondary" value="cancel" autofocus>取消</button>
+                <button class="danger-solid" value="delete">确认删除</button>
+            </div>
+        </form>
+    </dialog>
+
     <script>
-        let items = [{ name: "充电线" }];
-    const savedItems = localStorage.getItem("borrowItems");
+let items = [{ name: "充电线" }];
+let records = [];
+let itemToBorrow = null;
+let itemToDelete = null;
+const savedItems = localStorage.getItem("borrowItems");
+const itemList = document.getElementById("itemList");
+const borrowDialog = document.getElementById("borrowDialog");
+const deleteDialog = document.getElementById("deleteDialog");
 
-     if (savedItems !== null) {
-    items = JSON.parse(savedItems);
+if (savedItems !== null) {
+    const saved = JSON.parse(savedItems);
+    if (Array.isArray(saved)) {
+        items = saved;
+    } else {
+        items = saved.items;
+        records = saved.records;
+    }
 }
-function showRecord(action) {
-    const time = new Date().toLocaleTimeString();
-    const record = document.createElement("li");
-    record.textContent = time + " · " + action;
-    document.getElementById("recordList").prepend(record);
+
+function saveData() {
+    localStorage.setItem("borrowItems", JSON.stringify({ items, records }));
+}
+
+function showRecord(text) {
+    const row = document.createElement("li");
+    row.textContent = text;
+    document.getElementById("recordList").prepend(row);
+    document.getElementById("emptyRecords").hidden = true;
+}
+
+function addRecord(action) {
+    const text = new Date().toLocaleString() + " · " + action;
+    records.push(text);
+    saveData();
+    showRecord(text);
+}
+
+function isOverdue(item) {
+    if (!item.borrower || !item.dueDate) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return new Date(item.dueDate + "T00:00:00") < today;
+}
+
+function openBorrowDialog(item) {
+    itemToBorrow = item;
+    document.getElementById("borrowForm").reset();
+    document.getElementById("borrowItemName").textContent = item.name;
+    borrowDialog.showModal();
+}
+
+function borrowItem(event) {
+    event.preventDefault();
+    const input = document.getElementById("borrowerName");
+    const borrower = input.value.trim();
+    if (!borrower) {
+        input.focus();
+        return;
+    }
+    if (!itemToBorrow || itemToBorrow.borrower) return;
+
+    itemToBorrow.borrower = borrower;
+    itemToBorrow.dueDate = document.getElementById("dueDate").value;
+    addRecord(borrower + " 借走了 " + itemToBorrow.name);
+    borrowDialog.close();
+    renderItems();
+}
+
+function returnItem(item) {
+    const action = item.borrower + " 归还了 " + item.name;
+    item.borrower = "";
+    item.dueDate = "";
+    addRecord(action);
+    renderItems();
+}
+
+function openDeleteDialog(item) {
+    itemToDelete = item;
+    deleteDialog.returnValue = "";
+    const borrower = item.borrower ? " 当前借用人：" + item.borrower + "。" : "";
+    document.getElementById("deleteMessage").textContent = "确定从清单删除「" + item.name + "」？" + borrower;
+    deleteDialog.showModal();
 }
 
 function showItem(item) {
     const row = document.createElement("li");
-    const label = document.createElement("span");
+    row.className = "item-row";
+    const details = document.createElement("div");
+    const heading = document.createElement("div");
+    heading.className = "item-heading";
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    const badge = document.createElement("span");
     const button = document.createElement("button");
-
-    function updateRow() {
-        if (item.borrower) {
-            label.textContent = item.name + " · 已借出 · " + item.borrower + " ";
-            button.textContent = "归还";
-        } else {
-            label.textContent = item.name + " · 可借 ";
-            button.textContent = "借出";
-        }
-    }
-
-  button.onclick = function () {
-    let action;
+    button.type = "button";
 
     if (item.borrower) {
-        action = item.borrower + " 归还了 " + item.name;
-        item.borrower = "";
+        const late = isOverdue(item);
+        badge.className = late ? "badge overdue" : "badge borrowed";
+        badge.textContent = late ? "已逾期" : "已借出";
+        const description = document.createElement("p");
+        description.className = "item-meta";
+        description.textContent = "借用人 " + item.borrower;
+        if (item.dueDate) description.textContent += " · 应还 " + item.dueDate;
+        details.appendChild(description);
+        button.className = "secondary";
+        button.textContent = "归还";
+        button.onclick = function () { returnItem(item); };
     } else {
-        const borrower = prompt("请输入借用人的名字");
-        if (borrower === null || borrower.trim() === "") return;
-        item.borrower = borrower.trim();
-        action = item.borrower + " 借走了 " + item.name;
+        badge.className = "badge available";
+        badge.textContent = "可借";
+        button.textContent = "借出";
+        button.onclick = function () { openBorrowDialog(item); };
     }
 
-    localStorage.setItem("borrowItems", JSON.stringify(items));
-    updateRow();
-    showRecord(action);
-};
+    heading.appendChild(name);
+    heading.appendChild(badge);
+    details.prepend(heading);
+    row.appendChild(details);
 
-    updateRow();
-    row.appendChild(label);
-    row.appendChild(button);
-    document.getElementById("itemList").appendChild(row);
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "danger";
+    deleteButton.textContent = "删除";
+    deleteButton.setAttribute("aria-label", "删除 " + item.name);
+    deleteButton.onclick = function () { openDeleteDialog(item); };
+
+    const actions = document.createElement("div");
+    actions.className = "item-actions";
+    actions.appendChild(button);
+    actions.appendChild(deleteButton);
+    row.appendChild(actions);
+    itemList.appendChild(row);
 }
 
-function addItem() {
+function renderItems() {
+    itemList.replaceChildren();
+    document.getElementById("emptyItems").hidden = items.length > 0;
+    for (const item of items) {
+        showItem(item);
+    }
+    const borrowed = items.filter(item => item.borrower).length;
+    document.getElementById("totalCount").textContent = items.length;
+    document.getElementById("availableCount").textContent = items.length - borrowed;
+    document.getElementById("borrowedCount").textContent = borrowed;
+    document.getElementById("overdueCount").textContent = items.filter(isOverdue).length;
+}
+
+function addItem(event) {
+    event.preventDefault();
     const input = document.getElementById("itemName");
     const name = input.value.trim();
     if (name === "") return;
 
     const item = { name: name };
     items.push(item);
-    localStorage.setItem("borrowItems", JSON.stringify(items));
+    saveData();
 
-    showItem(item);
+    renderItems();
     input.value = "";
 }
 
-for (const item of items) {
-    showItem(item);
+document.getElementById("cancelBorrow").onclick = function () {
+    borrowDialog.close();
+};
+
+deleteDialog.addEventListener("close", function () {
+    const item = itemToDelete;
+    itemToDelete = null;
+    if (!item || deleteDialog.returnValue !== "delete") return;
+
+    items = items.filter(entry => entry !== item);
+    const borrower = item.borrower ? "（借用人：" + item.borrower + "）" : "";
+    addRecord("删除了 " + item.name + borrower);
+    renderItems();
+});
+
+renderItems();
+for (const record of records) {
+    showRecord(record);
 }
     </script>
 </body>
