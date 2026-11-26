@@ -20,6 +20,8 @@
             <div class="stat stat-overdue"><dt>已逾期</dt><dd id="overdueCount">0</dd></div>
         </dl>
 
+        <p class="operation-error" id="operationError" role="alert" hidden></p>
+
         <div class="panels">
             <section class="panel" aria-labelledby="itemsHeading">
                 <h2 id="itemsHeading">物品清单</h2>
@@ -50,9 +52,10 @@
             <input id="borrowerName" type="text" placeholder="输入借用人姓名" required autofocus>
             <label for="dueDate">应还日期 <span>选填</span></label>
             <input id="dueDate" type="date">
+            <p class="operation-error" id="borrowError" role="alert" hidden></p>
             <div class="dialog-actions">
                 <button class="secondary" id="cancelBorrow" type="button">取消</button>
-                <button type="submit">确认借出</button>
+                <button id="submitBorrow" type="submit">确认借出</button>
             </div>
         </form>
     </dialog>
@@ -77,19 +80,59 @@ let itemToBorrow = null;
 let itemToDelete = null;
 const itemList = document.getElementById("itemList");
 const borrowDialog = document.getElementById("borrowDialog");
+const submitBorrowButton = document.getElementById("submitBorrow");
+const cancelBorrowButton = document.getElementById("cancelBorrow");
 const deleteDialog = document.getElementById("deleteDialog");
 const deleteWarning = document.getElementById("deleteWarning");
 const continueDeleteButton = document.getElementById("continueDelete");
 const confirmDeleteButton = document.getElementById("confirmDelete");
 
+function showError(target, message = "") {
+    const errorBox = document.getElementById(target);
+    errorBox.textContent = message;
+    errorBox.hidden = message === "";
+}
+
+async function requestJson(url, options) {
+    let response;
+    try {
+        response = await fetch(url, options);
+    } catch {
+        throw new Error("连接后端失败，请确认 Java 服务已启动。");
+    }
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+        throw new Error(data?.error || "请求失败（HTTP " + response.status + "）。");
+    }
+    if (data === null) throw new Error("后端返回了无法读取的数据。");
+    return data;
+}
+
 // 问后端要最新的物品和记录，然后重画整个页面
-async function refresh() {
-    const res = await fetch("/api/state");
-    const data = await res.json();
-    items = data.items;
-    records = data.records;
-    renderItems();
-    renderRecords();
+async function refresh(afterSave = false) {
+    try {
+        const data = await requestJson("/api/state");
+        items = data.items;
+        records = data.records;
+        renderItems();
+        renderRecords();
+        showError("operationError");
+    } catch (error) {
+        const message = afterSave ? "操作已保存，列表刷新失败，请刷新页面查看。" : error.message;
+        showError("operationError", message);
+    }
+}
+
+async function runAction(request, onSuccess = null, errorTarget = "operationError") {
+    showError(errorTarget);
+    try {
+        await request();
+    } catch (error) {
+        showError(errorTarget, error.message);
+        return;
+    }
+    if (onSuccess) onSuccess();
+    await refresh(true);
 }
 
 function renderRecords() {
@@ -105,7 +148,7 @@ function renderRecords() {
 
 // 往后端发一个「要做某事」的请求
 function post(url, data) {
-    return fetch(url, {
+    return requestJson(url, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded; charset=utf-8" },
         body: new URLSearchParams(data)
@@ -121,6 +164,7 @@ function isOverdue(item) {
 
 function openBorrowDialog(item) {
     itemToBorrow = item;
+    showError("borrowError");
     document.getElementById("borrowForm").reset();
     document.getElementById("borrowItemName").textContent = item.name;
     borrowDialog.showModal();
@@ -134,21 +178,32 @@ async function borrowItem(event) {
         input.focus();
         return;
     }
-    if (!itemToBorrow || itemToBorrow.borrower) return;
+    if (!itemToBorrow || itemToBorrow.borrower || submitBorrowButton.disabled) return;
 
     const item = itemToBorrow;
-    itemToBorrow = null;
-    await post("/api/items/" + item.id + "/borrow", {
+    const details = {
         borrower: borrower,
         dueDate: document.getElementById("dueDate").value
-    });
-    borrowDialog.close();
-    await refresh();
+    };
+    submitBorrowButton.disabled = true;
+    cancelBorrowButton.disabled = true;
+    try {
+        await runAction(
+            () => post("/api/items/" + item.id + "/borrow", details),
+            () => {
+                itemToBorrow = null;
+                borrowDialog.close();
+            },
+            "borrowError"
+        );
+    } finally {
+        submitBorrowButton.disabled = false;
+        cancelBorrowButton.disabled = false;
+    }
 }
 
 async function returnItem(item) {
-    await post("/api/items/" + item.id + "/return", {});
-    await refresh();
+    await runAction(() => post("/api/items/" + item.id + "/return", {}));
 }
 
 function openDeleteDialog(item) {
@@ -234,14 +289,19 @@ async function addItem(event) {
     const name = input.value.trim();
     if (name === "") return;
 
-    await post("/api/items", { name: name });
-    input.value = "";
-    await refresh();
+    await runAction(
+        () => post("/api/items", { name: name }),
+        () => { input.value = ""; }
+    );
 }
 
-document.getElementById("cancelBorrow").onclick = function () {
+cancelBorrowButton.onclick = function () {
     borrowDialog.close();
 };
+
+borrowDialog.addEventListener("cancel", function (event) {
+    if (submitBorrowButton.disabled) event.preventDefault();
+});
 
 continueDeleteButton.onclick = function () {
     deleteWarning.hidden = false;
@@ -256,8 +316,7 @@ deleteDialog.addEventListener("close", async function () {
     itemToDelete = null;
     if (!item || deleteDialog.returnValue !== "delete" || confirmDeleteButton.disabled) return;
 
-    await fetch("/api/items/" + item.id, { method: "DELETE" });
-    await refresh();
+    await runAction(() => requestJson("/api/items/" + item.id, { method: "DELETE" }));
 });
 
 refresh();

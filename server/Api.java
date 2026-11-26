@@ -91,32 +91,40 @@ public class Api {
             return new Result(400, "{\"error\":\"借用人不能为空\"}");
         }
 
-        String name;
         try (Connection c = Db.connect()) {
-            // 先看看这个物品在不在、是不是已经被借走了
-            try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT name, borrower FROM items WHERE id = ?")) {
-                ps.setInt(1, id);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (!rs.next()) {
-                        return new Result(404, "{\"error\":\"物品不存在\"}");
-                    }
-                    if (rs.getString("borrower") != null) {
-                        return new Result(409, "{\"error\":\"这个物品已经借出去了\"}");
-                    }
-                    name = rs.getString("name");
+            c.setAutoCommit(false);
+            try {
+                // 判断可借和登记借出由同一条 SQL 完成。
+                int updated;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE items SET borrower = ?, due_date = ? WHERE id = ? AND borrower IS NULL")) {
+                    ps.setString(1, borrower);
+                    ps.setString(2, dueDate.isEmpty() ? null : dueDate);
+                    ps.setInt(3, id);
+                    updated = ps.executeUpdate();
                 }
-            }
-            // 把借用人、应还日期填进去
-            try (PreparedStatement ps = c.prepareStatement(
-                    "UPDATE items SET borrower = ?, due_date = ? WHERE id = ?")) {
-                ps.setString(1, borrower);
-                ps.setString(2, dueDate.isEmpty() ? null : dueDate);
-                ps.setInt(3, id);
-                ps.executeUpdate();
+
+                String name = null;
+                try (PreparedStatement ps = c.prepareStatement("SELECT name FROM items WHERE id = ?")) {
+                    ps.setInt(1, id);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) name = rs.getString("name");
+                    }
+                }
+                if (updated == 0) {
+                    c.rollback();
+                    if (name == null) return new Result(404, "{\"error\":\"物品不存在\"}");
+                    return new Result(409, "{\"error\":\"这个物品已经借出去了\"}");
+                }
+
+                // 状态和借出记录一起提交，写入出错时一起回滚。
+                addRecord(c, borrower + " 借走了 " + name);
+                c.commit();
+            } catch (Exception error) {
+                c.rollback();
+                throw error;
             }
         }
-        addRecord(borrower + " 借走了 " + name);
         return ok();
     }
 
@@ -224,8 +232,13 @@ public class Api {
 
     /** 往记录表里加一条 */
     private static void addRecord(String text) throws Exception {
-        try (Connection c = Db.connect();
-             PreparedStatement ps = c.prepareStatement(
+        try (Connection c = Db.connect()) {
+            addRecord(c, text);
+        }
+    }
+
+    private static void addRecord(Connection c, String text) throws Exception {
+        try (PreparedStatement ps = c.prepareStatement(
                      "INSERT INTO records(text, created_at) VALUES(?, ?)")) {
             ps.setString(1, text);
             ps.setString(2, LocalDateTime.now().format(TIME));

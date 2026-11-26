@@ -109,6 +109,7 @@ button {
 }
 
 button:hover { background: #194e3e; }
+button:disabled { opacity: .65; cursor: default; }
 button:focus-visible, input:focus-visible { outline: 2px solid #2c785e; outline-offset: 2px; }
 .secondary { border-color: #c9d9d0; color: #264a3d; background: #f2f7f3; }
 .secondary:hover { background: #e2eee6; }
@@ -182,6 +183,16 @@ dialog {
 
 dialog::backdrop { background: #152d26a0; }
 .dialog-item { margin-block: .4rem 1.1rem; color: #50665e; overflow-wrap: anywhere; }
+.operation-error {
+    margin-bottom: .85rem;
+    padding: .7rem .85rem;
+    border: 1px solid #efd6d0;
+    border-radius: .55rem;
+    background: #fbeae4;
+    color: #78301e;
+    font-size: .86rem;
+    overflow-wrap: anywhere;
+}
 .delete-warning {
     margin-bottom: .8rem;
     padding: .75rem;
