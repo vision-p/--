@@ -10,7 +10,7 @@
     <main class="workspace">
         <header class="hero">
             <h1>小组借物登记</h1>
-            <p>借还记录保存在当前浏览器</p>
+            <p>借还记录保存在本地数据库</p>
         </header>
 
         <dl class="overview" aria-label="物品统计">
@@ -71,11 +71,10 @@
     </dialog>
 
     <script>
-let items = [{ name: "充电线" }];
+let items = [];
 let records = [];
 let itemToBorrow = null;
 let itemToDelete = null;
-const savedItems = localStorage.getItem("borrowItems");
 const itemList = document.getElementById("itemList");
 const borrowDialog = document.getElementById("borrowDialog");
 const deleteDialog = document.getElementById("deleteDialog");
@@ -83,32 +82,34 @@ const deleteWarning = document.getElementById("deleteWarning");
 const continueDeleteButton = document.getElementById("continueDelete");
 const confirmDeleteButton = document.getElementById("confirmDelete");
 
-if (savedItems !== null) {
-    const saved = JSON.parse(savedItems);
-    if (Array.isArray(saved)) {
-        items = saved;
-    } else {
-        items = saved.items;
-        records = saved.records;
+// 问后端要最新的物品和记录，然后重画整个页面
+async function refresh() {
+    const res = await fetch("/api/state");
+    const data = await res.json();
+    items = data.items;
+    records = data.records;
+    renderItems();
+    renderRecords();
+}
+
+function renderRecords() {
+    const list = document.getElementById("recordList");
+    list.replaceChildren();
+    for (const record of records) {
+        const row = document.createElement("li");
+        row.textContent = record.createdAt + " · " + record.text;
+        list.appendChild(row);
     }
+    document.getElementById("emptyRecords").hidden = records.length > 0;
 }
 
-function saveData() {
-    localStorage.setItem("borrowItems", JSON.stringify({ items, records }));
-}
-
-function showRecord(text) {
-    const row = document.createElement("li");
-    row.textContent = text;
-    document.getElementById("recordList").prepend(row);
-    document.getElementById("emptyRecords").hidden = true;
-}
-
-function addRecord(action) {
-    const text = new Date().toLocaleString() + " · " + action;
-    records.push(text);
-    saveData();
-    showRecord(text);
+// 往后端发一个「要做某事」的请求
+function post(url, data) {
+    return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=utf-8" },
+        body: new URLSearchParams(data)
+    });
 }
 
 function isOverdue(item) {
@@ -125,7 +126,7 @@ function openBorrowDialog(item) {
     borrowDialog.showModal();
 }
 
-function borrowItem(event) {
+async function borrowItem(event) {
     event.preventDefault();
     const input = document.getElementById("borrowerName");
     const borrower = input.value.trim();
@@ -135,19 +136,19 @@ function borrowItem(event) {
     }
     if (!itemToBorrow || itemToBorrow.borrower) return;
 
-    itemToBorrow.borrower = borrower;
-    itemToBorrow.dueDate = document.getElementById("dueDate").value;
-    addRecord(borrower + " 借走了 " + itemToBorrow.name);
+    const item = itemToBorrow;
+    itemToBorrow = null;
+    await post("/api/items/" + item.id + "/borrow", {
+        borrower: borrower,
+        dueDate: document.getElementById("dueDate").value
+    });
     borrowDialog.close();
-    renderItems();
+    await refresh();
 }
 
-function returnItem(item) {
-    const action = item.borrower + " 归还了 " + item.name;
-    item.borrower = "";
-    item.dueDate = "";
-    addRecord(action);
-    renderItems();
+async function returnItem(item) {
+    await post("/api/items/" + item.id + "/return", {});
+    await refresh();
 }
 
 function openDeleteDialog(item) {
@@ -227,18 +228,15 @@ function renderItems() {
     document.getElementById("overdueCount").textContent = items.filter(isOverdue).length;
 }
 
-function addItem(event) {
+async function addItem(event) {
     event.preventDefault();
     const input = document.getElementById("itemName");
     const name = input.value.trim();
     if (name === "") return;
 
-    const item = { name: name };
-    items.push(item);
-    saveData();
-
-    renderItems();
+    await post("/api/items", { name: name });
     input.value = "";
+    await refresh();
 }
 
 document.getElementById("cancelBorrow").onclick = function () {
@@ -253,21 +251,16 @@ continueDeleteButton.onclick = function () {
     document.getElementById("cancelDelete").focus();
 };
 
-deleteDialog.addEventListener("close", function () {
+deleteDialog.addEventListener("close", async function () {
     const item = itemToDelete;
     itemToDelete = null;
     if (!item || deleteDialog.returnValue !== "delete" || confirmDeleteButton.disabled) return;
 
-    items = items.filter(entry => entry !== item);
-    const borrower = item.borrower ? "（借用人：" + item.borrower + "）" : "";
-    addRecord("删除了 " + item.name + borrower);
-    renderItems();
+    await fetch("/api/items/" + item.id, { method: "DELETE" });
+    await refresh();
 });
 
-renderItems();
-for (const record of records) {
-    showRecord(record);
-}
+refresh();
     </script>
 </body>
 </html>
