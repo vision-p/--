@@ -129,6 +129,14 @@ button:focus-visible, input:focus-visible { outline: 2px solid #2c785e; outline-
 }
 
 .item-row:last-child { padding-bottom: .2rem; border-bottom: 0; }
+
+.item-row.is-borrowed {
+    margin-block: .4rem;
+    padding: .8rem .75rem;
+    border: 1px solid #cf822f;
+    border-radius: .65rem;
+}
+
 .item-row > div { min-width: 0; }
 .item-actions { display: flex; flex-shrink: 0; gap: .4rem; }
 .item-heading { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .55rem; overflow-wrap: anywhere; }
@@ -174,6 +182,15 @@ dialog {
 
 dialog::backdrop { background: #152d26a0; }
 .dialog-item { margin-block: .4rem 1.1rem; color: #50665e; overflow-wrap: anywhere; }
+.delete-warning {
+    margin-bottom: .8rem;
+    padding: .75rem;
+    border-radius: .55rem;
+    background: #fbeae4;
+    color: #78301e;
+    font-size: .86rem;
+    line-height: 1.6;
+}
 dialog input { margin-bottom: .85rem; }
 dialog label span { color: #566a61; font-size: .75rem; font-weight: 400; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: .55rem; margin-top: .3rem; }

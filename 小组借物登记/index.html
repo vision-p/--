@@ -61,9 +61,11 @@
         <form method="dialog">
             <h2 id="deleteHeading">删除物品</h2>
             <p class="dialog-item" id="deleteMessage"></p>
+            <p class="delete-warning" id="deleteWarning" hidden>请再确认一次。删除后，物品会从清单移除，之前的借还记录仍可查看。</p>
             <div class="dialog-actions">
-                <button class="secondary" value="cancel" autofocus>取消</button>
-                <button class="danger-solid" value="delete">确认删除</button>
+                <button class="secondary" id="cancelDelete" type="submit" value="cancel" autofocus>取消</button>
+                <button class="danger-solid" id="continueDelete" type="button">继续删除</button>
+                <button class="danger-solid" id="confirmDelete" type="submit" value="delete" hidden disabled>确认删除</button>
             </div>
         </form>
     </dialog>
@@ -77,6 +79,9 @@ const savedItems = localStorage.getItem("borrowItems");
 const itemList = document.getElementById("itemList");
 const borrowDialog = document.getElementById("borrowDialog");
 const deleteDialog = document.getElementById("deleteDialog");
+const deleteWarning = document.getElementById("deleteWarning");
+const continueDeleteButton = document.getElementById("continueDelete");
+const confirmDeleteButton = document.getElementById("confirmDelete");
 
 if (savedItems !== null) {
     const saved = JSON.parse(savedItems);
@@ -148,6 +153,10 @@ function returnItem(item) {
 function openDeleteDialog(item) {
     itemToDelete = item;
     deleteDialog.returnValue = "";
+    deleteWarning.hidden = true;
+    continueDeleteButton.hidden = false;
+    confirmDeleteButton.hidden = true;
+    confirmDeleteButton.disabled = true;
     const borrower = item.borrower ? " 当前借用人：" + item.borrower + "。" : "";
     document.getElementById("deleteMessage").textContent = "确定从清单删除「" + item.name + "」？" + borrower;
     deleteDialog.showModal();
@@ -166,6 +175,7 @@ function showItem(item) {
     button.type = "button";
 
     if (item.borrower) {
+        row.classList.add("is-borrowed");
         const late = isOverdue(item);
         badge.className = late ? "badge overdue" : "badge borrowed";
         badge.textContent = late ? "已逾期" : "已借出";
@@ -235,10 +245,18 @@ document.getElementById("cancelBorrow").onclick = function () {
     borrowDialog.close();
 };
 
+continueDeleteButton.onclick = function () {
+    deleteWarning.hidden = false;
+    continueDeleteButton.hidden = true;
+    confirmDeleteButton.hidden = false;
+    confirmDeleteButton.disabled = false;
+    document.getElementById("cancelDelete").focus();
+};
+
 deleteDialog.addEventListener("close", function () {
     const item = itemToDelete;
     itemToDelete = null;
-    if (!item || deleteDialog.returnValue !== "delete") return;
+    if (!item || deleteDialog.returnValue !== "delete" || confirmDeleteButton.disabled) return;
 
     items = items.filter(entry => entry !== item);
     const borrower = item.borrower ? "（借用人：" + item.borrower + "）" : "";
