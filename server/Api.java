@@ -54,20 +54,18 @@ public class Api {
     }
 
     private static Result addItem(Map<String, String> p) throws Exception {
-        String name = p.getOrDefault("name", "").trim();
-        if (name.isEmpty()) {
-            return new Result(400, "{\"error\":\"物品名字不能为空\"}");
-        }
-        try (Connection c = Db.connect();
-             PreparedStatement ps = c.prepareStatement(
-                     "INSERT INTO items(name) VALUES(?)")) {
-            ps.setString(1, name);
-            ps.executeUpdate();
-        }
-        addRecord("新增了 " + name);
-        return ok();
+    String name=p.getOrDefault("name","").trim();
+    if(name.isEmpty()){
+        return new Result(400,"{\"error\":\"物品的名字不能为空\"}");
     }
-
+    try(Connection c=Db.connect();
+      PreparedStatement ps=c.prepareStatement( "INSERT INTO items(name) VALUES(?)")){
+        ps.setString(1, name);
+    ps.executeUpdate();
+      }
+      addRecord("新增了 " + name);
+     return ok();
+    }
     private static Result borrow(String path, Map<String, String> p) throws Exception {
         int id = idOf(path);
         String borrower = p.getOrDefault("borrower", "").trim();
