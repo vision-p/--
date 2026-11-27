@@ -9,17 +9,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * 接口。每个请求都从 handle() 进来，然后按路径分到对应的方法去干活。
- *
- * 这里只管「做什么」，不管「怎么收发网络」——发收网络的事情在 Server 里做完了。
- */
 public class Api {
 
     private static final DateTimeFormatter TIME =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /** 一个接口的结果：状态码 + 一段 JSON */
     static class Result {
         final int status;
         final String body;
@@ -35,37 +29,29 @@ public class Api {
             Map<String, String> params = parseForm(bodyText);
 
             if (path.equals("/api/state") && method.equals("GET")) {
-                // 网页一打开就要全部数据
                 return new Result(200, state());
 
             } else if (path.equals("/api/items") && method.equals("POST")) {
-                // 新增物品
                 return addItem(params);
 
             } else if (path.startsWith("/api/items/") && path.endsWith("/borrow")
                     && method.equals("POST")) {
-                // 借出
                 return borrow(path, params);
 
             } else if (path.startsWith("/api/items/") && path.endsWith("/return")
                     && method.equals("POST")) {
-                // 归还
                 return giveBack(path);
 
             } else if (path.startsWith("/api/items/") && method.equals("DELETE")) {
-                // 删除
                 return remove(path);
 
             } else {
                 return new Result(404, "{\"error\":\"没有这个接口\"}");
             }
         } catch (Exception e) {
-            // 出了任何错，都把错误信息回给网页，方便排查
             return new Result(500, "{\"error\":" + quote(e.toString()) + "}");
         }
     }
-
-    // ---------- 每个接口的具体做法 ----------
 
     private static Result addItem(Map<String, String> p) throws Exception {
         String name = p.getOrDefault("name", "").trim();
@@ -94,7 +80,6 @@ public class Api {
         try (Connection c = Db.connect()) {
             c.setAutoCommit(false);
             try {
-                // 判断可借和登记借出由同一条 SQL 完成。
                 int updated;
                 try (PreparedStatement ps = c.prepareStatement(
                         "UPDATE items SET borrower = ?, due_date = ? WHERE id = ? AND borrower IS NULL")) {
@@ -117,7 +102,6 @@ public class Api {
                     return new Result(409, "{\"error\":\"这个物品已经借出去了\"}");
                 }
 
-                // 状态和借出记录一起提交，写入出错时一起回滚。
                 addRecord(c, borrower + " 借走了 " + name);
                 c.commit();
             } catch (Exception error) {
@@ -148,7 +132,6 @@ public class Api {
                     name = rs.getString("name");
                 }
             }
-            // 借用人清空，应还日期也清空
             try (PreparedStatement ps = c.prepareStatement(
                     "UPDATE items SET borrower = NULL, due_date = NULL WHERE id = ?")) {
                 ps.setInt(1, id);
@@ -187,13 +170,10 @@ public class Api {
         return ok();
     }
 
-    // ---------- 小工具 ----------
-
     private static Result ok() {
         return new Result(200, "{\"ok\":true}");
     }
 
-    /** 把两张表的所有数据拼成一段 JSON 返回给网页 */
     private static String state() throws Exception {
         StringBuilder sb = new StringBuilder("{\"items\":[");
         try (Connection c = Db.connect();
@@ -213,7 +193,6 @@ public class Api {
         }
 
         sb.append("],\"records\":[");
-        // 倒序：最新的记录排在最前面
         try (Connection c = Db.connect();
              Statement st = c.createStatement();
              ResultSet rs = st.executeQuery(
@@ -230,7 +209,6 @@ public class Api {
         return sb.append("]}").toString();
     }
 
-    /** 往记录表里加一条 */
     private static void addRecord(String text) throws Exception {
         try (Connection c = Db.connect()) {
             addRecord(c, text);
@@ -246,7 +224,6 @@ public class Api {
         }
     }
 
-    /** 从 /api/items/12/borrow 里把 12 抠出来 */
     private static int idOf(String path) {
         String rest = path.substring("/api/items/".length());
         int slash = rest.indexOf('/');
@@ -254,7 +231,6 @@ public class Api {
         return Integer.parseInt(rest);
     }
 
-    /** 网页提交的是 name=雨伞&borrower=张三 这种格式，这里把它拆成键值对 */
     private static Map<String, String> parseForm(String body) {
         Map<String, String> map = new HashMap<>();
         if (body == null || body.isEmpty()) return map;
@@ -270,7 +246,6 @@ public class Api {
         return map;
     }
 
-    /** 把字符串包成 JSON 的字符串。null 要写成 JSON 的 null，不能写成 "null" */
     private static String quote(String s) {
         if (s == null) return "null";
         StringBuilder b = new StringBuilder("\"");
